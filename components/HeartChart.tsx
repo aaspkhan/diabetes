@@ -12,14 +12,14 @@ interface HeartChartProps {
 
 export const HeartChart: React.FC<HeartChartProps> = ({ data }) => {
   return (
-    <div className="w-full h-64">
+    <div className="w-full h-64 min-w-0 relative" style={{ width: '100%', height: '16rem' }}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart
           data={data}
           margin={{
             top: 10,
-            right: 0,
-            left: -20,
+            right: 10,
+            left: 0,
             bottom: 0,
           }}
         >
@@ -32,15 +32,17 @@ export const HeartChart: React.FC<HeartChartProps> = ({ data }) => {
           <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
           <XAxis 
             dataKey="time" 
-            tick={{ fill: '#94a3b8', fontSize: 12 }} 
+            tick={{ fill: '#94a3b8', fontSize: 10 }} 
             tickLine={false}
             axisLine={false}
+            minTickGap={30}
           />
           <YAxis 
             domain={['dataMin - 5', 'dataMax + 5']} 
-            tick={{ fill: '#94a3b8', fontSize: 12 }} 
+            tick={{ fill: '#94a3b8', fontSize: 10 }} 
             tickLine={false}
             axisLine={false}
+            width={30}
           />
           <Tooltip 
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#fff' }}

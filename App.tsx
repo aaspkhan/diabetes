@@ -146,26 +146,6 @@ export default function App() {
     }
   };
 
-  const enableDemoMode = () => {
-      setConnectionState({
-          isConnected: true,
-          deviceName: "Demo Watch Series 7",
-          batteryLevel: 92,
-          error: null
-      });
-      // Note: The main useEffect interval will handle updates when !isConnected, 
-      // but here we are setting isConnected=true, so we need a separate interval or logic.
-      // For simplicity, we'll let the main loop stop and start a specific demo loop.
-      
-      const demoInterval = setInterval(() => {
-          const fakeHr = 70 + Math.floor(Math.random() * 30);
-          handleNewHeartRate(fakeHr);
-      }, 1000);
-      
-      // Cleanup is tricky without refs in this simple implementation, 
-      // but usually demo mode is just for quick testing.
-  };
-
   const measureHeartRate = async () => {
       if (!connectionState.isConnected) {
           connectDevice();
@@ -202,7 +182,8 @@ export default function App() {
       setRiskData(result);
     } catch (e: any) {
       console.error(e);
-      setAnalysisError("Risk analysis failed. Please check your internet connection and try again.");
+      // We shouldn't reach here often now that analyzeDiabetesRisk catches its own errors
+      setAnalysisError("Risk analysis failed. Please check your internet connection.");
     } finally {
       setAnalyzing(false);
     }
@@ -234,7 +215,7 @@ export default function App() {
 
         {/* Connection Hero (Visible if not connected) */}
         {!connectionState.isConnected && (
-            <div className="bg-gradient-to-r from-blue-900/40 to-indigo-900/40 border border-blue-800 rounded-2xl p-8 text-center space-y-4 relative overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-900/40 to-indigo-900/40 border border-blue-800 rounded-2xl p-6 md:p-8 text-center space-y-4 relative overflow-hidden">
                 {/* Error Banner */}
                 {connectionState.error && (
                     <div className="absolute top-0 left-0 right-0 bg-red-500/90 text-white text-sm py-2 px-4 flex items-center justify-center gap-2 animate-pulse">
@@ -268,13 +249,6 @@ export default function App() {
                             </>
                         )}
                     </button>
-                    <button 
-                        onClick={enableDemoMode}
-                        disabled={isConnecting}
-                        className="bg-surface hover:bg-slate-700 border border-slate-600 text-slate-300 px-6 py-3 rounded-lg font-medium transition-all"
-                    >
-                        Try Demo Mode
-                    </button>
                 </div>
                 
                 {/* Additional Help Text */}
@@ -307,7 +281,7 @@ export default function App() {
         </div>
 
         {/* Chart Section */}
-        <div className="bg-surface border border-slate-700 rounded-xl p-6 shadow-lg">
+        <div className="bg-surface border border-slate-700 rounded-xl p-4 md:p-6 shadow-lg">
            <div className="flex justify-between items-center mb-6">
                 <h3 className="text-lg font-semibold text-white">Live Heart Rate</h3>
                 <span className="text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded">Last 60s</span>
@@ -350,9 +324,9 @@ export default function App() {
             </div>
 
             {/* Results Area */}
-            <div className="md:col-span-2 bg-surface border border-slate-700 rounded-xl p-6 min-h-[250px] relative overflow-hidden">
+            <div className="md:col-span-2 bg-surface border border-slate-700 rounded-xl p-4 md:p-6 min-h-[250px] relative overflow-hidden">
                 {!riskData && !analyzing && !analysisError && (
-                    <div className="flex flex-col items-center justify-center h-full text-slate-500">
+                    <div className="flex flex-col items-center justify-center h-full text-slate-500 text-center">
                         <ShieldCheck className="w-16 h-16 mb-3 opacity-20" />
                         <p>Press "Calculate Risk" to generate an assessment.</p>
                     </div>
