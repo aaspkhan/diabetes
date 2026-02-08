@@ -25,10 +25,19 @@ export const signUp = async (email: string, password: string) => {
 };
 
 export const signInWithGoogle = async () => {
+  // HELPER: This logs the exact URL you need to add to Google Cloud Console
+  // Look for this message in your browser's Developer Console (F12)
+  console.log(`%c[IMPORTANT] Please add this URI to Google Cloud Console > APIs & Services > Credentials > Authorized redirect URIs:`, "color: #0ea5e9; font-weight: bold");
+  console.log(`%c${SUPABASE_URL}/auth/v1/callback`, "color: #0ea5e9; font-weight: bold; text-decoration: underline;");
+
   return await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: window.location.origin
+      redirectTo: window.location.origin,
+      queryParams: {
+        access_type: 'offline',
+        prompt: 'consent', // Forces the Google consent screen to appear again
+      }
     }
   });
 };
