@@ -22,10 +22,7 @@ export async function analyzeDiabetesRisk(metrics: HealthMetrics, age: number, w
   `;
 
   try {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) throw new Error("Missing API Key");
-
-    const ai = new GoogleGenAI({ apiKey: apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
     const response = await ai.models.generateContent({
       model: model,
@@ -55,17 +52,14 @@ export async function analyzeDiabetesRisk(metrics: HealthMetrics, age: number, w
     return {
       riskLevel: "Moderate",
       score: 50,
-      summary: "Could not connect to AI service. Please check your internet connection or API Key.",
+      summary: "Could not connect to AI service. Please check your internet connection or .env configuration.",
       recommendations: ["Monitor manually", "Consult a doctor"]
     };
   }
 }
 
 export async function analyzeFood(base64Image: string): Promise<FoodAnalysisResult> {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) throw new Error("API Key is missing. Please check your settings.");
-
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     
     const prompt = "Identify this food. Estimate the total carbohydrates (g) and Glycemic Load (0-100). Provide a short health analysis for a diabetic.";
 
