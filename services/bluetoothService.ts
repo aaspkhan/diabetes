@@ -102,6 +102,7 @@ declare global {
 export class BluetoothService {
   private device: BluetoothDevice | null = null;
   private server: BluetoothRemoteGATTServer | null = null;
+  private disconnectListener: EventListener | null = null;
   
   // Callbacks
   private onHeartRateChange: ((hr: number) => void) | null = null;
@@ -113,6 +114,7 @@ export class BluetoothService {
   ) {
     this.onHeartRateChange = onHeartRateChange;
     this.onDisconnect = onDisconnect;
+    this.disconnectListener = this.handleDisconnection.bind(this);
   }
 
   public async connect(): Promise<string> {
@@ -123,24 +125,27 @@ export class BluetoothService {
 
       console.log('Requesting Bluetooth Device...');
       
-      // Updated to acceptAllDevices: true
-      // This allows the user to see ALL BLE devices in the picker, fixing the issue
-      // where specific watches don't show up due to strict filtering.
+      // We use acceptAllDevices to ensure we see all potential watches.
+      // We list services in optionalServices to ensure we can access them after connection.
       this.device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
         optionalServices: [
             BLE_SERVICES.HEART_RATE, 
             BLE_SERVICES.BATTERY, 
-            BLE_SERVICES.BLOOD_PRESSURE
+            BLE_SERVICES.BLOOD_PRESSURE,
+            "00001800-0000-1000-8000-00805f9b34fb", // Generic Access
+            "00001801-0000-1000-8000-00805f9b34fb"  // Generic Attribute
         ]
       });
 
       if (!this.device) throw new Error("No device selected.");
 
-      this.device.addEventListener('gattserverdisconnected', this.handleDisconnection.bind(this));
+      if (this.disconnectListener) {
+        this.device.removeEventListener('gattserverdisconnected', this.disconnectListener);
+        this.device.addEventListener('gattserverdisconnected', this.disconnectListener);
+      }
 
       console.log('Connecting to GATT Server...');
-      // Ensure gatt exists
       if (!this.device.gatt) {
         throw new Error("Device does not support GATT connection.");
       }
@@ -149,35 +154,65 @@ export class BluetoothService {
 
       if (!this.server) throw new Error("Could not connect to GATT Server.");
 
-      // Attempt to hook up Heart Rate, but do not fail the entire connection if it's missing.
-      // Many watches are proprietary and might pair but not expose standard HR immediately.
+      // CRITICAL FIX: Add a delay to allow the Android Bluetooth stack to stabilize
+      // the connection before we start bombarding it with service discovery requests.
+      // This prevents the "5 second auto-disconnect" issue.
+      console.log('Stabilizing connection...');
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      // Attempt to read battery as a "Keep Alive" ping if available
+      try {
+        await this.readBatteryLevel(this.server);
+      } catch (e) {
+        console.log("Battery service not available or failed to read (non-fatal).");
+      }
+
+      // Subscribe to Heart Rate
       try {
         await this.startHeartRateNotifications(this.server);
       } catch (err) {
         console.warn("Could not subscribe to Heart Rate service:", err);
-        // We continue so the user at least sees "Connected"
+        // Do not throw here; we want to keep the connection alive even if HR fails initially.
       }
       
-      return this.device.name || "Unknown Device";
+      return this.device.name || "Connected Device";
     } catch (error) {
       console.error('Connection failed', error);
+      // Clean up if initial connection fails
+      if (this.device && this.device.gatt?.connected) {
+         this.device.gatt.disconnect();
+      }
       throw error;
     }
   }
 
   public disconnect() {
     if (this.device && this.device.gatt?.connected) {
+      console.log("User initiated disconnect");
+      // Remove listener to prevent triggering the onDisconnect callback for a manual action
+      if (this.disconnectListener) {
+         this.device.removeEventListener('gattserverdisconnected', this.disconnectListener);
+      }
       this.device.gatt.disconnect();
+      // Manually trigger cleanup
+      if (this.onDisconnect) this.onDisconnect();
     }
   }
 
   private handleDisconnection() {
-    console.log('Device disconnected');
+    console.log('Device disconnected unexpectedly');
     if (this.onDisconnect) this.onDisconnect();
   }
 
+  private async readBatteryLevel(server: BluetoothRemoteGATTServer) {
+      const service = await server.getPrimaryService(BLE_SERVICES.BATTERY);
+      const characteristic = await service.getCharacteristic(BLE_CHARACTERISTICS.BATTERY_LEVEL);
+      const value = await characteristic.readValue();
+      const level = value.getUint8(0);
+      console.log(`Initial Battery Level: ${level}%`);
+  }
+
   private async startHeartRateNotifications(server: BluetoothRemoteGATTServer) {
-    // This will throw if the service doesn't exist, which is handled in connect()
     const service = await server.getPrimaryService(BLE_SERVICES.HEART_RATE);
     const characteristic = await service.getCharacteristic(BLE_CHARACTERISTICS.HEART_RATE_MEASUREMENT);
     
@@ -191,7 +226,7 @@ export class BluetoothService {
     const value = target.value;
     if (!value) return;
 
-    // Parsing the Heart Rate Measurement Value (See Bluetooth Spec)
+    // Parsing the Heart Rate Measurement Value
     const flags = value.getUint8(0);
     const rate16Bits = flags & 0x1;
     let heartRate: number;
