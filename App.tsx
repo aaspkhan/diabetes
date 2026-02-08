@@ -8,7 +8,8 @@ import {
   ShieldCheck, 
   AlertTriangle,
   RotateCcw,
-  Zap
+  Zap,
+  Loader2
 } from 'lucide-react';
 import { BluetoothService } from './services/bluetoothService';
 import { analyzeDiabetesRisk } from './services/geminiService';
@@ -30,6 +31,7 @@ export default function App() {
   const [metrics, setMetrics] = useState<HealthMetrics>(DEFAULT_METRICS);
   const [bpmHistory, setBpmHistory] = useState<{time: string, bpm: number}[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [riskData, setRiskData] = useState<RiskAnalysisResult | null>(null);
   
   // Refs
@@ -86,28 +88,42 @@ export default function App() {
 
   const connectDevice = async () => {
     setConnectionState(prev => ({ ...prev, error: null }));
+    setIsConnecting(true);
+    
     try {
       if (bluetoothService.current) {
         const name = await bluetoothService.current.connect();
         setConnectionState({
           isConnected: true,
           deviceName: name,
-          batteryLevel: 85, // Mock battery for now as characteristic reading is async/complex
+          batteryLevel: 85, // Mock battery for now
           error: null
         });
       }
     } catch (err: any) {
-        // Fallback for demo if no device is selected or error
-        console.error(err);
+        console.error("Connection error:", err);
+        let errorMsg = "Failed to connect";
+        
+        if (err.name === 'NotFoundError') {
+             errorMsg = "No device selected. Please try again.";
+        } else if (err.name === 'SecurityError') {
+             errorMsg = "Security Block: Check permissions or site SSL.";
+        } else if (err.message && err.message.includes('permissions policy')) {
+             errorMsg = "Bluetooth blocked by Permissions Policy.";
+        } else if (err.message) {
+             errorMsg = err.message;
+        }
+        
         setConnectionState(prev => ({ 
             ...prev, 
-            error: err.message || "Failed to connect",
+            error: errorMsg,
         }));
+    } finally {
+        setIsConnecting(false);
     }
   };
 
   const enableDemoMode = () => {
-      // Simulate a connection
       setConnectionState({
           isConnected: true,
           deviceName: "Demo Watch Series 7",
@@ -115,14 +131,10 @@ export default function App() {
           error: null
       });
       
-      // Start fake heart rate
       const interval = setInterval(() => {
           const fakeHr = 70 + Math.floor(Math.random() * 30);
           handleNewHeartRate(fakeHr);
       }, 1000);
-      
-      // Store interval ID to clear later if needed (in a real app)
-      // For this demo code, we just let it run
   };
 
   const handleAnalyzeRisk = async () => {
@@ -164,8 +176,16 @@ export default function App() {
 
         {/* Connection Hero (Visible if not connected) */}
         {!connectionState.isConnected && (
-            <div className="bg-gradient-to-r from-blue-900/40 to-indigo-900/40 border border-blue-800 rounded-2xl p-8 text-center space-y-4">
-                <div className="bg-blue-600/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="bg-gradient-to-r from-blue-900/40 to-indigo-900/40 border border-blue-800 rounded-2xl p-8 text-center space-y-4 relative overflow-hidden">
+                {/* Error Banner */}
+                {connectionState.error && (
+                    <div className="absolute top-0 left-0 right-0 bg-red-500/90 text-white text-sm py-2 px-4 flex items-center justify-center gap-2 animate-pulse">
+                        <AlertTriangle className="w-4 h-4" />
+                        {connectionState.error}
+                    </div>
+                )}
+
+                <div className="bg-blue-600/20 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 mt-4">
                     <Bluetooth className="w-8 h-8 text-blue-400 animate-pulse" />
                 </div>
                 <h2 className="text-2xl font-bold text-white">Connect your Watch</h2>
@@ -175,24 +195,34 @@ export default function App() {
                 <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
                     <button 
                         onClick={connectDevice}
-                        className="bg-primary hover:bg-sky-600 text-white px-6 py-3 rounded-lg font-semibold transition-all shadow-lg shadow-sky-900/20 flex items-center justify-center gap-2"
+                        disabled={isConnecting}
+                        className={`bg-primary hover:bg-sky-600 text-white px-6 py-3 rounded-lg font-semibold transition-all shadow-lg shadow-sky-900/20 flex items-center justify-center gap-2 ${isConnecting ? 'opacity-70 cursor-wait' : ''}`}
                     >
-                        <Bluetooth className="w-5 h-5" />
-                        Find Device
+                        {isConnecting ? (
+                            <>
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                Scanning...
+                            </>
+                        ) : (
+                            <>
+                                <Bluetooth className="w-5 h-5" />
+                                Find Device
+                            </>
+                        )}
                     </button>
                     <button 
                         onClick={enableDemoMode}
+                        disabled={isConnecting}
                         className="bg-surface hover:bg-slate-700 border border-slate-600 text-slate-300 px-6 py-3 rounded-lg font-medium transition-all"
                     >
                         Try Demo Mode
                     </button>
                 </div>
-                {connectionState.error && (
-                    <p className="text-red-400 text-sm mt-2 flex items-center justify-center gap-1">
-                        <AlertTriangle className="w-4 h-4" />
-                        {connectionState.error}
-                    </p>
-                )}
+                
+                {/* Additional Help Text */}
+                <p className="text-xs text-slate-500 mt-4">
+                    Note: Ensure Bluetooth is on and site permission is allowed in browser settings.
+                </p>
             </div>
         )}
 

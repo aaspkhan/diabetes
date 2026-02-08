@@ -118,13 +118,21 @@ export class BluetoothService {
   public async connect(): Promise<string> {
     try {
       if (!navigator.bluetooth) {
-        throw new Error("Web Bluetooth is not supported in this browser.");
+        throw new Error("Web Bluetooth is not supported in this browser. Please use Chrome on Android.");
       }
 
       console.log('Requesting Bluetooth Device...');
+      
+      // Updated to acceptAllDevices: true
+      // This allows the user to see ALL BLE devices in the picker, fixing the issue
+      // where specific watches don't show up due to strict filtering.
       this.device = await navigator.bluetooth.requestDevice({
-        filters: [{ services: [BLE_SERVICES.HEART_RATE] }],
-        optionalServices: [BLE_SERVICES.BATTERY, BLE_SERVICES.BLOOD_PRESSURE]
+        acceptAllDevices: true,
+        optionalServices: [
+            BLE_SERVICES.HEART_RATE, 
+            BLE_SERVICES.BATTERY, 
+            BLE_SERVICES.BLOOD_PRESSURE
+        ]
       });
 
       if (!this.device) throw new Error("No device selected.");
@@ -132,12 +140,23 @@ export class BluetoothService {
       this.device.addEventListener('gattserverdisconnected', this.handleDisconnection.bind(this));
 
       console.log('Connecting to GATT Server...');
-      this.server = await this.device.gatt?.connect() || null;
+      // Ensure gatt exists
+      if (!this.device.gatt) {
+        throw new Error("Device does not support GATT connection.");
+      }
+
+      this.server = await this.device.gatt.connect();
 
       if (!this.server) throw new Error("Could not connect to GATT Server.");
 
-      await this.startHeartRateNotifications(this.server);
-      // Try to get other services if available, but don't fail if they aren't
+      // Attempt to hook up Heart Rate, but do not fail the entire connection if it's missing.
+      // Many watches are proprietary and might pair but not expose standard HR immediately.
+      try {
+        await this.startHeartRateNotifications(this.server);
+      } catch (err) {
+        console.warn("Could not subscribe to Heart Rate service:", err);
+        // We continue so the user at least sees "Connected"
+      }
       
       return this.device.name || "Unknown Device";
     } catch (error) {
@@ -158,15 +177,13 @@ export class BluetoothService {
   }
 
   private async startHeartRateNotifications(server: BluetoothRemoteGATTServer) {
-    try {
-      const service = await server.getPrimaryService(BLE_SERVICES.HEART_RATE);
-      const characteristic = await service.getCharacteristic(BLE_CHARACTERISTICS.HEART_RATE_MEASUREMENT);
-      await characteristic.startNotifications();
-      characteristic.addEventListener('characteristicvaluechanged', this.handleHeartRateValueChanged.bind(this));
-      console.log('Heart Rate notifications started');
-    } catch (error) {
-      console.warn('Heart Rate service not available or failed to start', error);
-    }
+    // This will throw if the service doesn't exist, which is handled in connect()
+    const service = await server.getPrimaryService(BLE_SERVICES.HEART_RATE);
+    const characteristic = await service.getCharacteristic(BLE_CHARACTERISTICS.HEART_RATE_MEASUREMENT);
+    
+    await characteristic.startNotifications();
+    characteristic.addEventListener('characteristicvaluechanged', this.handleHeartRateValueChanged.bind(this));
+    console.log('Heart Rate notifications started');
   }
 
   private handleHeartRateValueChanged(event: Event) {
