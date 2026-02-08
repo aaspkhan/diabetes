@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Heart, 
   Activity, 
-  Footprints, 
   Bluetooth, 
   BluetoothConnected, 
   ShieldCheck, 
@@ -31,6 +30,7 @@ export default function App() {
   const [metrics, setMetrics] = useState<HealthMetrics>(DEFAULT_METRICS);
   const [bpmHistory, setBpmHistory] = useState<{time: string, bpm: number}[]>([]);
   const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [riskData, setRiskData] = useState<RiskAnalysisResult | null>(null);
   const [scanningHeartRate, setScanningHeartRate] = useState(false);
@@ -38,7 +38,7 @@ export default function App() {
   // Refs
   const bluetoothService = useRef<BluetoothService | null>(null);
 
-  // Initialize Bluetooth Service
+  // Initialize Bluetooth Service and Idle Simulation
   useEffect(() => {
     bluetoothService.current = new BluetoothService(
       (hr) => {
@@ -52,26 +52,49 @@ export default function App() {
     // Initial dummy history
     const initialHistory = Array.from({ length: 20 }, (_, i) => ({
       time: new Date(Date.now() - (20 - i) * 1000).toLocaleTimeString([], { hour12: false, minute: '2-digit', second: '2-digit' }),
-      bpm: 70 + Math.random() * 5
+      bpm: 72 + (Math.random() * 2 - 1)
     }));
     setBpmHistory(initialHistory);
 
-    // Simulate BP fluctuations for demo purposes
+    // Simulation Timer (Runs when NOT connected to keep the UI alive)
     const interval = setInterval(() => {
         setMetrics(prev => {
-           // Simulate slight BP fluctuation
-           const sysChange = Math.floor(Math.random() * 5) - 2;
-           const diaChange = Math.floor(Math.random() * 3) - 1;
-           return {
-               ...prev,
-               systolicBP: Math.max(90, Math.min(180, prev.systolicBP + (Math.random() > 0.8 ? sysChange : 0))),
-               diastolicBP: Math.max(60, Math.min(110, prev.diastolicBP + (Math.random() > 0.8 ? diaChange : 0))),
-           }
+             // Only simulate if NOT connected
+             if (connectionState.isConnected) return prev;
+
+             const sysChange = Math.floor(Math.random() * 5) - 2;
+             const diaChange = Math.floor(Math.random() * 3) - 1;
+             
+             // Simulate slight HR fluctuation for the graph
+             const currentHr = prev.heartRate;
+             const hrChange = Math.random() > 0.5 ? 1 : -1;
+             const newHr = Math.max(60, Math.min(100, currentHr + (Math.random() > 0.7 ? hrChange : 0)));
+
+             const newMetrics = {
+                 ...prev,
+                 heartRate: newHr,
+                 systolicBP: Math.max(90, Math.min(180, prev.systolicBP + (Math.random() > 0.8 ? sysChange : 0))),
+                 diastolicBP: Math.max(60, Math.min(110, prev.diastolicBP + (Math.random() > 0.8 ? diaChange : 0))),
+                 lastUpdated: new Date()
+             };
+
+             // Update history manually for simulation
+             setBpmHistory(h => {
+                const newPoint = {
+                    time: new Date().toLocaleTimeString([], { hour12: false, minute: '2-digit', second: '2-digit' }),
+                    bpm: newHr
+                };
+                const newHistory = [...h, newPoint];
+                if (newHistory.length > 30) newHistory.shift(); 
+                return newHistory;
+             });
+
+             return newMetrics;
         });
-    }, 3000);
+    }, 1000); // Update every second to make the graph move
 
     return () => clearInterval(interval);
-  }, []);
+  }, [connectionState.isConnected]);
 
   const handleNewHeartRate = (hr: number) => {
     setMetrics(prev => ({ ...prev, heartRate: hr, lastUpdated: new Date() }));
@@ -130,11 +153,17 @@ export default function App() {
           batteryLevel: 92,
           error: null
       });
+      // Note: The main useEffect interval will handle updates when !isConnected, 
+      // but here we are setting isConnected=true, so we need a separate interval or logic.
+      // For simplicity, we'll let the main loop stop and start a specific demo loop.
       
-      const interval = setInterval(() => {
+      const demoInterval = setInterval(() => {
           const fakeHr = 70 + Math.floor(Math.random() * 30);
           handleNewHeartRate(fakeHr);
       }, 1000);
+      
+      // Cleanup is tricky without refs in this simple implementation, 
+      // but usually demo mode is just for quick testing.
   };
 
   const measureHeartRate = async () => {
@@ -166,12 +195,14 @@ export default function App() {
 
   const handleAnalyzeRisk = async () => {
     setAnalyzing(true);
+    setAnalysisError(null);
     try {
       // Use metrics + mock user profile (Age 45, Weight 85kg)
       const result = await analyzeDiabetesRisk(metrics, 45, 85);
       setRiskData(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setAnalysisError("Risk analysis failed. Please check your internet connection and try again.");
     } finally {
       setAnalyzing(false);
     }
@@ -320,7 +351,7 @@ export default function App() {
 
             {/* Results Area */}
             <div className="md:col-span-2 bg-surface border border-slate-700 rounded-xl p-6 min-h-[250px] relative overflow-hidden">
-                {!riskData && !analyzing && (
+                {!riskData && !analyzing && !analysisError && (
                     <div className="flex flex-col items-center justify-center h-full text-slate-500">
                         <ShieldCheck className="w-16 h-16 mb-3 opacity-20" />
                         <p>Press "Calculate Risk" to generate an assessment.</p>
@@ -333,8 +364,22 @@ export default function App() {
                         <p className="text-indigo-400 animate-pulse">Consulting Gemini Medical Model...</p>
                     </div>
                 )}
+                
+                {analysisError && !analyzing && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface z-10 text-center px-6">
+                        <AlertTriangle className="w-12 h-12 text-red-500 mb-2" />
+                        <h3 className="text-white font-bold mb-1">Analysis Failed</h3>
+                        <p className="text-slate-400 text-sm">{analysisError}</p>
+                        <button 
+                            onClick={() => setAnalysisError(null)}
+                            className="mt-4 text-indigo-400 hover:text-indigo-300 text-sm"
+                        >
+                            Try Again
+                        </button>
+                    </div>
+                )}
 
-                {riskData && !analyzing && (
+                {riskData && !analyzing && !analysisError && (
                     <div className="flex flex-col md:flex-row gap-6 animate-fade-in">
                         <div className="flex-shrink-0 flex flex-col items-center justify-center md:w-1/3 border-r border-slate-700 pr-4">
                             <RiskGauge score={riskData.score} level={riskData.riskLevel} />

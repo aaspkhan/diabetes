@@ -37,7 +37,7 @@ export const HeartChart: React.FC<HeartChartProps> = ({ data }) => {
             axisLine={false}
           />
           <YAxis 
-            domain={[40, 160]} 
+            domain={['dataMin - 5', 'dataMax + 5']} 
             tick={{ fill: '#94a3b8', fontSize: 12 }} 
             tickLine={false}
             axisLine={false}
@@ -45,6 +45,7 @@ export const HeartChart: React.FC<HeartChartProps> = ({ data }) => {
           <Tooltip 
             contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569', borderRadius: '8px', color: '#fff' }}
             itemStyle={{ color: '#ef4444' }}
+            labelStyle={{ color: '#94a3b8' }}
           />
           <Area 
             type="monotone" 
@@ -53,7 +54,8 @@ export const HeartChart: React.FC<HeartChartProps> = ({ data }) => {
             strokeWidth={3}
             fillOpacity={1} 
             fill="url(#colorBpm)" 
-            isAnimationActive={false} 
+            isAnimationActive={true} 
+            animationDuration={500}
           />
         </AreaChart>
       </ResponsiveContainer>
