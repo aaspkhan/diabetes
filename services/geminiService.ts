@@ -22,7 +22,17 @@ export async function analyzeDiabetesRisk(metrics: HealthMetrics, age: number, w
   `;
 
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = process.env.API_KEY;
+    if (!apiKey || apiKey.trim() === '') {
+        return {
+            riskLevel: "Moderate",
+            score: 0,
+            summary: "API Key is missing. Please check your .env file and restart the server.",
+            recommendations: ["Add API_KEY to .env", "Restart 'npm run dev'"]
+        };
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
 
     const response = await ai.models.generateContent({
       model: model,
@@ -45,21 +55,26 @@ export async function analyzeDiabetesRisk(metrics: HealthMetrics, age: number, w
     if (!response.text) throw new Error("Empty response from AI");
     return JSON.parse(response.text) as RiskAnalysisResult;
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Analysis Failed:", error);
-    // Return a fallback/error object for risk analysis to prevent app crash, 
-    // but log the error clearly.
+    const msg = error.message || String(error);
+    
     return {
       riskLevel: "Moderate",
       score: 50,
-      summary: "Could not connect to AI service. Please check your internet connection or .env configuration.",
-      recommendations: ["Monitor manually", "Consult a doctor"]
+      summary: `AI Error: ${msg}. Please verify your API Key and internet connection.`,
+      recommendations: ["Check API Key in .env", "Check Network Connection", "Check Console for details"]
     };
   }
 }
 
 export async function analyzeFood(base64Image: string): Promise<FoodAnalysisResult> {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const apiKey = process.env.API_KEY;
+    if (!apiKey || apiKey.trim() === '') {
+        throw new Error("API Key is missing. Check .env file.");
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
     
     const prompt = "Identify this food. Estimate the total carbohydrates (g) and Glycemic Load (0-100). Provide a short health analysis for a diabetic.";
 
