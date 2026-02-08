@@ -103,6 +103,7 @@ export class BluetoothService {
   private device: BluetoothDevice | null = null;
   private server: BluetoothRemoteGATTServer | null = null;
   private disconnectListener: EventListener | null = null;
+  private pendingHeartRateRequests: Array<(hr: number) => void> = [];
   
   // Callbacks
   private onHeartRateChange: ((hr: number) => void) | null = null;
@@ -125,8 +126,6 @@ export class BluetoothService {
 
       console.log('Requesting Bluetooth Device...');
       
-      // We use acceptAllDevices to ensure we see all potential watches.
-      // We list services in optionalServices to ensure we can access them after connection.
       this.device = await navigator.bluetooth.requestDevice({
         acceptAllDevices: true,
         optionalServices: [
@@ -155,8 +154,6 @@ export class BluetoothService {
       if (!this.server) throw new Error("Could not connect to GATT Server.");
 
       // CRITICAL FIX: Add a delay to allow the Android Bluetooth stack to stabilize
-      // the connection before we start bombarding it with service discovery requests.
-      // This prevents the "5 second auto-disconnect" issue.
       console.log('Stabilizing connection...');
       await new Promise(resolve => setTimeout(resolve, 1500));
 
@@ -172,13 +169,11 @@ export class BluetoothService {
         await this.startHeartRateNotifications(this.server);
       } catch (err) {
         console.warn("Could not subscribe to Heart Rate service:", err);
-        // Do not throw here; we want to keep the connection alive even if HR fails initially.
       }
       
       return this.device.name || "Connected Device";
     } catch (error) {
       console.error('Connection failed', error);
-      // Clean up if initial connection fails
       if (this.device && this.device.gatt?.connected) {
          this.device.gatt.disconnect();
       }
@@ -189,14 +184,36 @@ export class BluetoothService {
   public disconnect() {
     if (this.device && this.device.gatt?.connected) {
       console.log("User initiated disconnect");
-      // Remove listener to prevent triggering the onDisconnect callback for a manual action
       if (this.disconnectListener) {
          this.device.removeEventListener('gattserverdisconnected', this.disconnectListener);
       }
       this.device.gatt.disconnect();
-      // Manually trigger cleanup
       if (this.onDisconnect) this.onDisconnect();
     }
+  }
+
+  // New method to allow "Manual Scan" from UI
+  public requestHeartRate(): Promise<number> {
+      if (!this.device || !this.device.gatt?.connected) {
+          return Promise.reject(new Error("Device not connected"));
+      }
+
+      return new Promise((resolve, reject) => {
+          // Set a timeout in case the watch doesn't send data
+          const timer = setTimeout(() => {
+              // Remove the resolver from the list if it times out
+              const index = this.pendingHeartRateRequests.indexOf(resolver);
+              if (index > -1) this.pendingHeartRateRequests.splice(index, 1);
+              reject(new Error("Timeout: Watch did not send data."));
+          }, 5000); // 5 second timeout
+
+          const resolver = (hr: number) => {
+              clearTimeout(timer);
+              resolve(hr);
+          };
+
+          this.pendingHeartRateRequests.push(resolver);
+      });
   }
 
   private handleDisconnection() {
@@ -236,8 +253,18 @@ export class BluetoothService {
       heartRate = value.getUint8(1);
     }
 
+    // 1. Notify general listener
     if (this.onHeartRateChange) {
       this.onHeartRateChange(heartRate);
+    }
+
+    // 2. Resolve any pending manual requests (from UI clicks)
+    if (this.pendingHeartRateRequests.length > 0) {
+        console.log(`Resolving ${this.pendingHeartRateRequests.length} pending HR requests with value: ${heartRate}`);
+        // Copy and clear the array to handle all currently pending requests
+        const requests = [...this.pendingHeartRateRequests];
+        this.pendingHeartRateRequests = [];
+        requests.forEach(resolve => resolve(heartRate));
     }
   }
 }

@@ -33,6 +33,7 @@ export default function App() {
   const [analyzing, setAnalyzing] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [riskData, setRiskData] = useState<RiskAnalysisResult | null>(null);
+  const [scanningHeartRate, setScanningHeartRate] = useState(false);
   
   // Refs
   const bluetoothService = useRef<BluetoothService | null>(null);
@@ -137,6 +138,28 @@ export default function App() {
       }, 1000);
   };
 
+  const measureHeartRate = async () => {
+      if (!connectionState.isConnected) {
+          connectDevice();
+          return;
+      }
+      
+      if (!bluetoothService.current) return;
+
+      setScanningHeartRate(true);
+      try {
+          // This will wait for the next data packet from the watch
+          const hr = await bluetoothService.current.requestHeartRate();
+          // Update immediately just in case (though listener usually handles it)
+          handleNewHeartRate(hr);
+      } catch (err) {
+          console.error("Manual scan timed out or failed", err);
+          // Optional: Show a toast error here
+      } finally {
+          setScanningHeartRate(false);
+      }
+  };
+
   const handleAnalyzeRisk = async () => {
     setAnalyzing(true);
     try {
@@ -235,6 +258,8 @@ export default function App() {
             icon={Heart} 
             colorClass="text-rose-500" 
             trend={metrics.heartRate > 100 ? "Elevated" : "Normal Resting"}
+            onClick={measureHeartRate}
+            isLoading={scanningHeartRate}
           />
           <MetricCard 
             title="Blood Pressure" 
